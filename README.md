@@ -80,7 +80,13 @@ poetry run torchrun   --standalone   --nnodes=1   --nproc_per_node=<num_gpus>   
 ## 5. 추론 실행
 
 ```bash
-poetry run python predict.py   --model_path <trained_model_path>   --chunk_size <chunk_size>   --n_layers <num_layers>
+poetry run python predict.py \
+  --model_path <trained_model_path> \
+  --d_model <d_model> \
+  --d_ffn <d_ffn> \
+  --n_layers <num_layers> \
+  --chunk_size <chunk_size> \
+  --max_token <max_token>
 ```
 
 **predict.py 주요 인자**
@@ -88,8 +94,11 @@ poetry run python predict.py   --model_path <trained_model_path>   --chunk_size 
 | 인자 | 기본값 | 설명 |
 |------|--------|------|
 | `--model_path` | `output/gpt_model_ddp.pt` | 학습된 모델 파라미터 경로 |
-| `--chunk_size` | `256` | 입력 시퀀스 길이 (학습 시 설정과 동일) |
+| `--d_model` | `256` | 모델 임베딩 차원 |
+| `--d_ffn` | `1024` | FFN(Feed Forward Network) 차원 |
 | `--n_layers` | `6` | 모델 레이어 수 (학습 시 설정과 동일) |
+| `--chunk_size` | `256` | 입력 시퀀스 길이 (학습 시 설정과 동일) |
+| `--max_token` | `50` | 생성할 최대 토큰 수 |
 
 > 실행 후 Prompt 입력 대기 상태가 되며, 문장을 입력하면 모델이 이어서 문장을 생성합니다.  
 > `exit` 입력 시 종료됩니다.
