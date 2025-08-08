@@ -29,4 +29,4 @@ COPY --chown=irteam:irteam . .
 RUN poetry install --no-root --no-ansi
 
 # === GPU CONFIG ===
-ENV NVIDIA_VISIBLE_DEVICES=0
+# ENV NVIDIA_VISIBLE_DEVICES=0

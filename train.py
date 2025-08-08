@@ -11,10 +11,10 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data import DataLoader, TensorDataset
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
 def get_dataset(split="train", data_path=None):
     if data_path and os.path.exists(data_path):
-        print(f"Loading preprocessed dataset from {data_path}")
         return torch.load(data_path)
     else:
         dataset = load_kr3(split=split)
@@ -65,12 +65,15 @@ def main(args):
 
     # Tokenize
     chunks, vocab_size = get_token(texts, mode=args.mode, chunk_size=args.chunk_size)
+    # total_tokens = sum(len(seq) for seq in chunks)
+    # print(f"Total tokens in dataset: {total_tokens:,}")
+    # print(f"Suggested parameter budget (Chinchilla rule): ~{suggested_params:,} parameters")
     dataloader = get_data_loader(chunks, args.batch_size)
 
     # Model
     model = GPTFFNN(
         vocab_size=vocab_size,
-        d_model=args.chunk_size,
+        d_model=args.d_model,
         d_ffn=args.d_ffn,
         n_layers=args.n_layers,
         max_len=args.chunk_size
@@ -79,9 +82,12 @@ def main(args):
     if dist.is_available() and dist.is_initialized():
         model = DDP(model, device_ids=[local_rank])
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr,)
+    # weight_decay=0.01
+    scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs)
     criterion = nn.CrossEntropyLoss()
-
+    #label_smoothing=0.1
+    
     # Training loop
     start_time = time.time()
     for epoch in range(args.epochs):
@@ -90,6 +96,7 @@ def main(args):
         loss = train(model, dataloader, optimizer, criterion, device)
         if local_rank == 0:
             print(f"Epoch {epoch+1}, Loss: {loss:.4f}")
+        scheduler.step()
 
     # Save model
     if local_rank == 0:
@@ -106,7 +113,8 @@ if __name__ == "__main__":
     parser.add_argument("--data_path", type=str, default="data/dataset.pt", help="Path to preprocessed dataset (.pt)")
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--epochs", type=int, default=1)
-    parser.add_argument("--chunk_size", type=int, default=256)
+    parser.add_argument("--chunk_size", type=int, default=256, help="Sequence length (context window)")
+    parser.add_argument("--d_model", type=int, default=256, help="Embedding/hidden size")
     parser.add_argument("--d_ffn", type=int, default=1024)
     parser.add_argument("--n_layers", type=int, default=6)
     parser.add_argument("--lr", type=float, default=1e-3)
