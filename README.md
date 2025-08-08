@@ -36,15 +36,15 @@ poetry install
 ## 3. 데이터 준비
 
 ```bash
-poetry run python load.py --split <split_name> --output_path <output_file_path>
+poetry run python load.py --output_path <output_file_path> --val_ratio <validation_ratio>
 ```
 
 **load.py 주요 인자**
 
 | 인자 | 기본값 | 설명 |
 |------|--------|------|
-| `--split` | `train` | 불러올 데이터셋 분할 (`train`, `test`, `validation`) |
-| `--output_path` | `data/dataset.pt` | 정제된 데이터를 저장할 경로 |
+| `--output_path` | `data/dataset.pt` | directory to save processed data |
+| `--val_ratio` | `0.05` | fraction of data reserved for validation |
 
 ---
 
