@@ -47,7 +47,7 @@ class GPT(nn.Module):
         nn.init.normal_(self.token_emb.weight, mean=0.0, std=0.02)
         nn.init.normal_(self.pos_emb.weight, mean=0.0, std=0.02)
 
-    def forward(self, x):
+    def forward(self, x, return_hidden=False):
         B, T = x.size()
 
         # Token + positional embeddings
@@ -57,9 +57,14 @@ class GPT(nn.Module):
         x = tok_emb + pos_emb
 
         x = self.drop(x)
+        causal_mask = torch.triu(torch.ones(T, T, device=x.device), diagonal=1).bool()
         for block in self.blocks:
-            x = block(x)
+            x = block(x, attn_mask=causal_mask)
 
         x = self.ln_f(x)
         logits = self.head(x)
+
+        if return_hidden:
+            return logits, x  # (B, T, vocab_size), (B, T, d_model)
+            
         return logits

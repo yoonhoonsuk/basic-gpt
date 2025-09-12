@@ -8,6 +8,8 @@ from preprocess.tokenizer_bbpe import tokenizer_bbpe
 from model.FFNN import GPTFFNN
 from model.decoder_transformer import GPT
 
+from util.file_utils import parse_filename
+
 def load_dataset(name):
     if name == "movie_review_ko":
         ds = hf_load(
@@ -20,19 +22,6 @@ def load_dataset(name):
         )["train"]
         return {"texts": [t for t in ds["document"] if isinstance(t, str) and t.strip()]}
 
-    # if name == "hate_speech_ko":
-    #     ds = hf_load(
-    #         "csv",
-    #         data_files=[
-    #             "https://raw.githubusercontent.com/adlnlp/K-MHaS/main/data/kmhas_train.txt",
-    #             "https://raw.githubusercontent.com/adlnlp/K-MHaS/main/data/kmhas_valid.txt",
-    #             "https://raw.githubusercontent.com/adlnlp/K-MHaS/main/data/kmhas_test.txt",
-    #         ],
-    #         delimiter="\t",
-    #     )["train"]
-    #     col = "document" if "document" in ds.column_names else ds.column_names[0]
-    #     return {"texts": [t for t in ds[col] if isinstance(t, str) and t.strip()]}
-    
     if name == "hate_speech_ko":
         from datasets import concatenate_datasets
         dd = hf_load("nayohan/korean-hate-speech")
@@ -40,9 +29,7 @@ def load_dataset(name):
         col = next((c for c in ("comments","comment","text","document","sentence","content") if c in ds.column_names), ds.column_names[0])
         return {"texts": [t for t in ds[col] if isinstance(t, str) and t.strip()]}
 
-
     raise ValueError("dataset must be 'movie_review_ko' or 'hate_speech_ko'")
-
 
 def get_token(texts, mode="tokenizer", chunk_size=256):
     return manual_bbpe(texts, chunk_size) if mode == "manual" else tokenizer_bbpe(texts, chunk_size)
@@ -51,21 +38,6 @@ def get_data_loader(chunks, batch_size):
     x = torch.tensor([c[:-1] for c in chunks], dtype=torch.long)
     y = torch.tensor([c[1:] for c in chunks], dtype=torch.long)
     return DataLoader(TensorDataset(x, y), batch_size=batch_size, shuffle=False)
-
-def parse_filename(path: str):
-    """Parse E{epochs}_N{n_layers}_{d_model}_{d_ffn}.pt"""
-    name = os.path.basename(path)
-    stem, _ = os.path.splitext(name)
-    m = re.match(r'^E(?P<E>\d+)_N(?P<N>\d+)_(?P<D>\d+)_(?P<F>\d+)', stem)
-    if not m:
-        return None
-    g = m.groupdict()
-    return {
-        "epochs": int(g["E"]),
-        "n_layers": int(g["N"]),
-        "d_model": int(g["D"]),
-        "d_ffn": int(g["F"]),
-    }
 
 @torch.no_grad()
 def evaluate(model, dataloader, criterion, device):
@@ -103,7 +75,13 @@ def main(args):
             is_decoder = isinstance(state, dict) and any(("attn." in k or "pos_emb." in k) for k in state.keys())
             ModelCls = GPT if is_decoder else GPTFFNN
 
-        model = ModelCls(vocab_size=vocab_size, d_model=args.d_model, d_ffn=args.d_ffn, n_layers=args.n_layers, max_len=args.chunk_size).to(device)
+        model = ModelCls(
+            vocab_size=vocab_size,
+            d_model=args.d_model,
+            d_ffn=args.d_ffn,
+            n_layers=args.n_layers,
+            max_len=args.chunk_size
+        ).to(device)
         model.load_state_dict(state)
 
         criterion = nn.CrossEntropyLoss()
@@ -130,6 +108,6 @@ if __name__ == "__main__":
         args.d_model  = parsed["d_model"]
         args.d_ffn    = parsed["d_ffn"]
         print(f"[validate] Parsed from filename: "
-              f"E{parsed['epochs']} N{args.n_layers} d_model={args.d_model} d_ffn={args.d_ffn}")
+              f"N{args.n_layers} d_model={args.d_model} d_ffn={args.d_ffn}")
 
     main(args)

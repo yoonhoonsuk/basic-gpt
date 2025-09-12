@@ -1,35 +1,14 @@
-import argparse, os, torch
-import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset
-import re
-from model.FFNN import GPTFFNN
-from model.decoder_transformer import GPT
+import argparse, os, torch, re
 from tqdm import tqdm
 
-def get_dataset(split="validation", data_dir="data"):
-    path = os.path.join(data_dir, f"{split}_tokenized.pt")
-    if os.path.exists(path):
-        obj = torch.load(path)
-        x, y, vocab_size = obj["x"], obj["y"], obj["vocab_size"]
-        return TensorDataset(x, y), vocab_size
-    raise FileNotFoundError(f"{path} not found. Run tokenization.py first.")
+import torch.nn as nn
+from torch.utils.data import DataLoader, TensorDataset
 
-def get_data_loader(dataset, batch_size):
-    return DataLoader(dataset, batch_size=batch_size, shuffle=False)
+from model.FFNN import GPTFFNN
+from model.decoder_transformer import GPT
 
-def parse_filename(path: str):
-    name = os.path.basename(path)
-    stem, _ = os.path.splitext(name)
-    m = re.match(r'^E(?P<E>\d+)_N(?P<N>\d+)_(?P<D>\d+)_(?P<F>\d+)', stem)
-    if not m:
-        return None
-    g = m.groupdict()
-    return {
-        "epochs": int(g["E"]),
-        "n_layers": int(g["N"]),
-        "d_model": int(g["D"]),
-        "d_ffn": int(g["F"]),
-    }
+from util.file_utils import parse_filename
+from util.data_utils import get_dataset
 
 @torch.no_grad()
 def validate(model, dataloader, criterion, device, n_tokens=None): 
@@ -61,9 +40,23 @@ def main(args):
     print(args)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Load tokenized validation set
-    dataset, vocab_size = get_dataset(split="validation", data_dir=args.data_dir)
-    dataloader = get_data_loader(dataset, args.batch_size)
+    parsed = parse_filename(args.model_path)
+    if parsed:
+        args.n_layers = parsed["n_layers"]
+        args.d_model  = parsed["d_model"]
+        args.d_ffn    = parsed["d_ffn"]
+        is_post = parsed.get("is_post", False)
+    else:
+        is_post = False
+
+    dataset, vocab_size = get_dataset(
+        split="validation",
+        data_dir=args.data_dir,
+        max_tokens=None,
+        chunk_size=args.chunk_size,
+        is_post=is_post
+    )
+    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
 
     state = torch.load(args.model_path, map_location=device)
     if any(k.startswith("module.") for k in state.keys()):
@@ -77,7 +70,6 @@ def main(args):
         is_decoder = any(("attn." in k or "pos_emb." in k) for k in state.keys())
         ModelCls = GPT if is_decoder else GPTFFNN
 
-    # Load model
     model = ModelCls(
         vocab_size=vocab_size,
         d_model=args.d_model,
@@ -89,7 +81,6 @@ def main(args):
 
     criterion = nn.CrossEntropyLoss()
 
-    # Validate
     avg_loss, ppl = validate(model, dataloader, criterion, device, n_tokens=args.n_tokens)
     print(f"Validation Loss: {avg_loss:.4f}, Perplexity: {ppl:.2f}")
 
@@ -107,13 +98,4 @@ if __name__ == "__main__":
     parser.add_argument("--n_tokens", type=int, default=None,
                         help="Limit validation to this many million tokens (e.g., 10=10M tokens).")
     args = parser.parse_args()
-
-    parsed = parse_filename(args.model_path)
-    if parsed:
-        args.n_layers = parsed["n_layers"]
-        args.d_model  = parsed["d_model"]
-        args.d_ffn    = parsed["d_ffn"]
-        print(f"[validate] Parsed from filename: "
-              f"E{parsed['epochs']} N{args.n_layers} d_model={args.d_model} d_ffn={args.d_ffn}")
-
     main(args)
